@@ -605,9 +605,9 @@ static void dhdsdio_sdtest_set(dhd_bus_t *bus, uint count);
 #ifdef DHD_DEBUG
 static int dhdsdio_checkdied(dhd_bus_t *bus, char *data, uint size);
 static int dhd_serialconsole(dhd_bus_t *bus, bool get, bool enable, int *bcmerror);
+static int dhdsdio_mem_dump(dhd_bus_t *bus);
 #endif /* DHD_DEBUG */
 
-static int dhdsdio_mem_dump(dhd_bus_t *bus);
 static int dhdsdio_devcap_set(dhd_bus_t *bus, uint8 cap);
 static int dhdsdio_download_state(dhd_bus_t *bus, bool enter);
 
