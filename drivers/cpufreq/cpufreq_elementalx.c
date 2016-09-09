@@ -148,7 +148,7 @@ static struct dbs_tuners {
 	.ignore_nice = 0,
 	.sync_freq = 0,
 	.optimal_freq = 0,
-	.io_is_busy = 1,
+	.io_is_busy = 0,
 	.two_phase_freq = 0,
 	.ui_sampling_rate = UI_DYNAMIC_SAMPLING_RATE,
 	.input_event_timeout = INPUT_EVENT_TIMEOUT,

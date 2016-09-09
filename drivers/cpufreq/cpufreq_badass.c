@@ -193,7 +193,7 @@ static struct bds_tuners {
 	.powersave_bias = 0,
 	.sync_freq = 0,
 	.optimal_freq = 0,
-	.io_is_busy = 1,
+	.io_is_busy = 0,
 #ifdef CONFIG_CPU_FREQ_GOV_BADASS_2_PHASE
 	.two_phase_freq = 0,
 	.semi_busy_threshold = SEMI_BUSY_THRESHOLD,
