@@ -31,9 +31,7 @@
 
 #define DEF_SAMPLING_RATE			(50000)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
-#define DEF_FREQUENCY_UP_THRESHOLD		(60)
-#define DEF_FREQUENCY_UP_THRESHOLD_MULTY	(70)
-#define DEF_FREQUENCY_UP_THRESHOLD_ANY_CPU	(70)
+#define DEF_FREQUENCY_UP_THRESHOLD		(80)
 #define DEF_SAMPLING_DOWN_FACTOR		(1)
 #define MAX_SAMPLING_DOWN_FACTOR		(100000)
 #define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(3)
@@ -44,12 +42,12 @@
 #define MIN_FREQUENCY_DOWN_DIFFERENTIAL		(1)
 
 #ifdef CONFIG_ARCH_MSM8974
-#define DEF_POWER_SAVE_FREQUENCY		(1497600)
+#define DEF_POWER_SAVE_FREQUENCY		(1190400)
 #define DEF_TWO_PHASE_FREQUENCY			(1728000)
-#define DBS_INPUT_EVENT_MIN_FREQ		(1728000)
-#define DEF_FREQUENCY_OPTIMAL			(1728000)
+#define DBS_INPUT_EVENT_MIN_FREQ		(1574400)
+#define DEF_FREQUENCY_OPTIMAL			(1190400)
 #define DEF_FREQ_DOWN_STEP			(550000)
-#define DEF_FREQ_DOWN_STEP_BARRIER		(1728000)
+#define DEF_FREQ_DOWN_STEP_BARRIER		(1190400)
 #else
 #define DEF_POWER_SAVE_FREQUENCY		(750000)
 #define DEF_TWO_PHASE_FREQUENCY			(1300000)
@@ -90,10 +88,10 @@ struct cpufreq_governor cpufreq_gov_intellimm = {
 enum {DBS_NORMAL_SAMPLE, DBS_SUB_SAMPLE};
 
 struct cpu_dbs_info_s {
-	u64 prev_cpu_idle;
-	u64 prev_cpu_iowait;
-	u64 prev_cpu_wall;
-	u64 prev_cpu_nice;
+	cputime64_t prev_cpu_idle;
+	cputime64_t prev_cpu_iowait;
+	cputime64_t prev_cpu_wall;
+	cputime64_t prev_cpu_nice;
 	struct cpufreq_policy *cur_policy;
 	struct delayed_work work;
 	struct cpufreq_frequency_table *freq_table;
@@ -146,7 +144,7 @@ static struct dbs_tuners {
 	unsigned int up_threshold_multi_core;
 	unsigned int down_differential;
 	unsigned int down_differential_multi_core;
-	unsigned int optimal_freq_speed;
+	unsigned int optimal_freq;
 	unsigned int up_threshold_any_cpu_load;
 	unsigned int ignore_nice;
 	unsigned int sampling_down_factor;
@@ -158,15 +156,15 @@ static struct dbs_tuners {
 	unsigned int freq_down_step;
 	unsigned int freq_down_step_barrier;
 } dbs_tuners_ins = {
-	.up_threshold_multi_core = DEF_FREQUENCY_UP_THRESHOLD_MULTY,
+	.up_threshold_multi_core = DEF_FREQUENCY_UP_THRESHOLD,
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
 	.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR,
 	.down_differential = DEF_FREQUENCY_DOWN_DIFFERENTIAL,
 	.down_differential_multi_core = MICRO_FREQUENCY_DOWN_DIFFERENTIAL,
-	.up_threshold_any_cpu_load = DEF_FREQUENCY_UP_THRESHOLD_ANY_CPU,
+	.up_threshold_any_cpu_load = DEF_FREQUENCY_UP_THRESHOLD,
 	.ignore_nice = 0,
 	.powersave_bias = 0,
-	.optimal_freq_speed = 1728000,
+	.optimal_freq = 0,
 	.shortcut = 0,
 	.io_is_busy = 0,
 	.power_save_freq = DEF_POWER_SAVE_FREQUENCY,
@@ -175,8 +173,8 @@ static struct dbs_tuners {
 	.freq_down_step_barrier = DEF_FREQ_DOWN_STEP_BARRIER,
 };
 
-static inline u64 get_cpu_iowait_time(unsigned int cpu,
-						u64 *wall)
+static inline cputime64_t get_cpu_iowait_time(unsigned int cpu,
+						cputime64_t *wall)
 {
 	u64 iowait_time = get_cpu_iowait_time_us(cpu, wall);
 
@@ -297,7 +295,7 @@ show_one(down_differential, down_differential);
 show_one(sampling_down_factor, sampling_down_factor);
 show_one(ignore_nice_load, ignore_nice);
 show_one(down_differential_multi_core, down_differential_multi_core);
-show_one(optimal_freq_speed, optimal_freq_speed);
+show_one(optimal_freq, optimal_freq);
 show_one(up_threshold_any_cpu_load, up_threshold_any_cpu_load);
 show_one(freq_down_step, freq_down_step);
 show_one(freq_down_step_barrier, freq_down_step_barrier);
@@ -308,6 +306,50 @@ static ssize_t show_powersave_bias(struct kobject *kobj,
 	return snprintf(buf, PAGE_SIZE, "%d\n", dbs_tuners_ins.powersave_bias);
 }
 
+static void update_sampling_rate(unsigned int new_rate)
+{
+	int cpu;
+
+	dbs_tuners_ins.sampling_rate = new_rate
+				     = max(new_rate, min_sampling_rate);
+
+	get_online_cpus();
+	for_each_online_cpu(cpu) {
+		struct cpufreq_policy *policy;
+		struct cpu_dbs_info_s *dbs_info;
+		unsigned long next_sampling, appointed_at;
+
+		policy = cpufreq_cpu_get(cpu);
+		if (!policy)
+			continue;
+		dbs_info = &per_cpu(imm_cpu_dbs_info, policy->cpu);
+		cpufreq_cpu_put(policy);
+
+		mutex_lock(&dbs_info->timer_mutex);
+
+		if (!delayed_work_pending(&dbs_info->work)) {
+			mutex_unlock(&dbs_info->timer_mutex);
+			continue;
+		}
+
+		next_sampling  = jiffies + usecs_to_jiffies(new_rate);
+		appointed_at = dbs_info->work.timer.expires;
+
+		if (time_before(next_sampling, appointed_at)) {
+
+			mutex_unlock(&dbs_info->timer_mutex);
+			cancel_delayed_work_sync(&dbs_info->work);
+			mutex_lock(&dbs_info->timer_mutex);
+
+			queue_delayed_work_on(dbs_info->cpu, dbs_wq,
+				&dbs_info->work, usecs_to_jiffies(new_rate));
+
+		}
+		mutex_unlock(&dbs_info->timer_mutex);
+	}
+	put_online_cpus();
+}
+
 static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
 {
@@ -316,8 +358,7 @@ static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 	ret = sscanf(buf, "%u", &input);
 	if (ret != 1)
 		return -EINVAL;
-
-	dbs_tuners_ins.sampling_rate = max(input, min_sampling_rate);
+	update_sampling_rate(input);
 	return count;
 }
 
@@ -365,7 +406,7 @@ static ssize_t store_down_differential_multi_core(struct kobject *a,
 }
 
 
-static ssize_t store_optimal_freq_speed(struct kobject *a, struct attribute *b,
+static ssize_t store_optimal_freq(struct kobject *a, struct attribute *b,
 				   const char *buf, size_t count)
 {
 	unsigned int input;
@@ -374,7 +415,7 @@ static ssize_t store_optimal_freq_speed(struct kobject *a, struct attribute *b,
 	ret = sscanf(buf, "%u", &input);
 	if (ret != 1)
 		return -EINVAL;
-	dbs_tuners_ins.optimal_freq_speed = input;
+	dbs_tuners_ins.optimal_freq = input;
 	return count;
 }
 
@@ -681,7 +722,7 @@ static ssize_t show_multi_phase_freq_tbl(struct kobject *kobj,
 static ssize_t store_multi_phase_freq_tbl(struct kobject *a,
 		struct attribute *b, const char *buf, size_t count)
 {
-	return count;
+	return 0;
 }
 
 show_one(two_phase_freq, two_phase_freq);
@@ -751,7 +792,7 @@ define_one_global_rw(ignore_nice_load);
 define_one_global_rw(powersave_bias);
 define_one_global_rw(up_threshold_multi_core);
 define_one_global_rw(down_differential_multi_core);
-define_one_global_rw(optimal_freq_speed);
+define_one_global_rw(optimal_freq);
 define_one_global_rw(up_threshold_any_cpu_load);
 define_one_global_rw(input_event_min_freq);
 define_one_global_rw(multi_phase_freq_tbl);
@@ -771,7 +812,7 @@ static struct attribute *dbs_attributes[] = {
 	&shortcut.attr,
 	&up_threshold_multi_core.attr,
 	&down_differential_multi_core.attr,
-	&optimal_freq_speed.attr,
+	&optimal_freq.attr,
 	&up_threshold_any_cpu_load.attr,
 	&input_event_min_freq.attr,
 	&multi_phase_freq_tbl.attr,
@@ -906,7 +947,7 @@ static void dbs_freq_increase(struct cpufreq_policy *p, unsigned int freq)
 			CPUFREQ_RELATION_L : CPUFREQ_RELATION_H);
 }
 
-int input_event_boosted_cpu(void)
+int input_event_boosted(void)
 {
 	unsigned long flags;
 
@@ -948,13 +989,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	/* per cpu load calculation */
 	for_each_cpu(j, policy->cpus) {
-		u64 cur_wall_time, cur_idle_time, cur_iowait_time;
+		cputime64_t cur_wall_time, cur_idle_time, cur_iowait_time;
 		unsigned int idle_time, wall_time, iowait_time;
 		unsigned int cur_load;
 
 		j_dbs_info = &per_cpu(imm_cpu_dbs_info, j);
 
-		cur_idle_time = get_cpu_idle_time(j, &cur_wall_time, dbs_tuners_ins.io_is_busy);
+		cur_idle_time = get_cpu_idle_time(j, &cur_wall_time,
+						dbs_tuners_ins.io_is_busy);
 		cur_iowait_time = get_cpu_iowait_time(j, &cur_wall_time);
 
 		wall_time = (unsigned int)
@@ -1055,16 +1097,16 @@ set_freq:
 	}
 
 	// shortcuts
-	if (input_event_boosted_cpu()) {
+	if (input_event_boosted()) {
 		return;
 	}
 
 	if (num_of_cpus > 1) {
 		if (avg_load_freq > dbs_tuners_ins.up_threshold_multi_core *
 								policy->cur) {
-			if (policy->cur < dbs_tuners_ins.optimal_freq_speed)
+			if (policy->cur < dbs_tuners_ins.optimal_freq)
 				dbs_freq_increase(policy,
-					dbs_tuners_ins.optimal_freq_speed);
+					dbs_tuners_ins.optimal_freq);
 			return;
 		}
 	}
@@ -1088,13 +1130,13 @@ set_freq:
 			freq_next = policy->min;
 
 		if (num_of_cpus > 1) {
-			if (dbs_tuners_ins.optimal_freq_speed >
+			if (dbs_tuners_ins.optimal_freq >
 				policy->min && avg_load_freq >
 			    ((dbs_tuners_ins.up_threshold_multi_core -
 			    dbs_tuners_ins.down_differential_multi_core) *
 			    policy->cur) &&
-			    freq_next < dbs_tuners_ins.optimal_freq_speed)
-				freq_next = dbs_tuners_ins.optimal_freq_speed;
+			    freq_next < dbs_tuners_ins.optimal_freq)
+				freq_next = dbs_tuners_ins.optimal_freq;
 		}
 
 		if (dbs_tuners_ins.powersave_bias) {
@@ -1163,7 +1205,7 @@ static void do_dbs_timer(struct work_struct *work)
 		}
 	} else {
 		delay = dbs_info->freq_lo_jiffies;
-		if (input_event_boosted_cpu())
+		if (input_event_boosted())
 			goto sched_wait;
 
 		__cpufreq_driver_target(dbs_info->cur_policy,
@@ -1222,7 +1264,7 @@ static void dbs_input_event(struct input_handle *handle, unsigned int type,
 			if (likely(input_event_counter > 0))
 				input_event_counter--;
 			else
-				pr_warning("Touch isn't paired!\n");
+				pr_warning("dbs_input_event: Touch isn't paired!\n");
 			input_event_min_freq = 0;
 		}
 	}
@@ -1387,8 +1429,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 				dbs_tuners_ins.sampling_rate =
 					DEF_SAMPLING_RATE;
 
-			if (dbs_tuners_ins.optimal_freq_speed == 0)
-				dbs_tuners_ins.optimal_freq_speed = policy->min;
+			if (dbs_tuners_ins.optimal_freq == 0)
+				dbs_tuners_ins.optimal_freq = policy->min;
 
 			dbs_init_freq_map_table(policy);
 
@@ -1506,11 +1548,13 @@ static int __init cpufreq_gov_dbs_init(void)
 	idle_time = get_cpu_idle_time_us(cpu, NULL);
 	put_cpu();
 	if (idle_time != -1ULL) {
+
 		dbs_tuners_ins.up_threshold = MICRO_FREQUENCY_UP_THRESHOLD;
 		dbs_tuners_ins.down_differential =
 					MICRO_FREQUENCY_DOWN_DIFFERENTIAL;
 		min_sampling_rate = MICRO_FREQUENCY_MIN_SAMPLE_RATE;
 	} else {
+
 		min_sampling_rate =
 			MIN_SAMPLING_RATE_RATIO * jiffies_to_usecs(10);
 	}
