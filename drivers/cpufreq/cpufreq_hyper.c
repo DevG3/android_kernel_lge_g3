@@ -46,6 +46,7 @@
 #define MIN_FREQUENCY_DOWN_DIFFERENTIAL		(1)
 #define FREQ_STEP				(55)
 #define DEFAULT_FREQ_BOOST_TIME			(500000)
+#define DEFAULT_BOOST_FREQ			(2265600)
 #define MAX_FREQ_BOOST_TIME			(5000000)
 #define UP_THRESHOLD_AT_MIN_FREQ		(40)
 #define FREQ_FOR_RESPONSIVENESS			(2265600)
@@ -153,7 +154,7 @@ static struct dbs_tuners {
 	.ignore_nice = 0,
 	.powersave_bias = 0,
 	.freq_boost_time = DEFAULT_FREQ_BOOST_TIME,
-	.boostfreq = 2265600,
+	.boostfreq = DEFAULT_BOOST_FREQ,
 	.freq_step = FREQ_STEP,
 	.freq_responsiveness = FREQ_FOR_RESPONSIVENESS
 };

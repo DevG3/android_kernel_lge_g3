@@ -34,6 +34,7 @@
  * It helps to keep variable names smaller, simpler
  */
 
+#define DEF_SAMPLING_RATE			(50000)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
 #define DEF_FREQUENCY_UP_THRESHOLD		(90)
 #define DEF_FREQUENCY_UP_THRESHOLD_MC		(70)
@@ -182,7 +183,7 @@ static struct bds_tuners {
 	unsigned int gpu_busy_clr_threshold;
 #endif
 } bds_tuners_ins = {
-	.sampling_rate = 50000,
+	.sampling_rate = DEF_SAMPLING_RATE,
 	.up_threshold_multi_core = DEF_FREQUENCY_UP_THRESHOLD_MC,
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
 	.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR,

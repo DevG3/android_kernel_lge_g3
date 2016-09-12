@@ -53,7 +53,6 @@ static int g_count = 0;
 #define INPUT_EVENT_MAX_TIMEOUT 		(3000)
 #define INPUT_EVENT_TIMEOUT			(500)
 #define MIN_SAMPLING_RATE_RATIO			(2)
-#define DEF_OPTIMAL_FREQ			(300000)
 
 static unsigned int min_sampling_rate;
 static unsigned int skip_slim = 0;
@@ -157,7 +156,7 @@ static struct dbs_tuners {
 	.ignore_nice = 0,
 	.powersave_bias = 0,
 	.sync_freq = 0,
-	.optimal_freq = DEF_OPTIMAL_FREQ,
+	.optimal_freq = 0,
 	.io_is_busy = 0,
 	.two_phase_freq = 0,
 	.ui_sampling_rate = UI_DYNAMIC_SAMPLING_RATE,

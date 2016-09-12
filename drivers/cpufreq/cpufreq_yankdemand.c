@@ -41,9 +41,6 @@
 #define DEF_SAMPLING_DOWN_FACTOR			(2)	/* Yank555.lu : was 1 */
 #define MAX_SAMPLING_DOWN_FACTOR			(100000)
 #define DEF_INPUT_BOOST					(652800)/* Yank555.lu : new */
-#define DEF_IO_IS_BUSY					(0)	/* Yank555.lu : new */
-#define DEF_OPTIMAL_FREQUENCY				(960000)/* Yank555.lu : new */
-#define DEF_SYNC_FREQUENCY				(883200)/* Yank555.lu : new */
 #define MICRO_FREQUENCY_DOWN_DIFFERENTIAL		(3)
 #define MICRO_FREQUENCY_DOWN_DIFFERENTIAL_MULTI_CORE	(3)	/* Yank555.lu : new */
 #define MICRO_FREQUENCY_UP_THRESHOLD			(95)
@@ -239,9 +236,9 @@ static struct dbs_tuners {
 	.up_threshold_any_cpu_load = DEF_FREQUENCY_UP_THRESHOLD_ANY_CPU_LOAD,
 	.ignore_nice = 0,
 	.powersave_bias = 0,
-	.sync_freq = DEF_SYNC_FREQUENCY,
-	.optimal_freq = DEF_OPTIMAL_FREQUENCY,
-	.io_is_busy = DEF_IO_IS_BUSY,
+	.sync_freq = 0,
+	.optimal_freq = 0,
+	.io_is_busy = 0,
 	//20130711 smart_up
 	.smart_up = SMART_UP_PLUS,
 	.smart_slow_up_load = SUP_SLOW_UP_LOAD,
